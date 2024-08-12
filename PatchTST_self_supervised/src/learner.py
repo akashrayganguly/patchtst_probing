@@ -122,7 +122,7 @@ class Learner(GetAttr):
     def fit_one_cycle(self, n_epochs, lr_max=None, pct_start=0.3):
         self.n_epochs = n_epochs
         self.lr_max = lr_max if lr_max else self.lr
-        cb = OneCycleLR(lr_max=self.lr_max, pct_start=pct_start)
+        cb = OneCycleLR(lr_max=self.lr_max, pct_start=pct_start, verbose=True)
         self.fit(self.n_epochs, cbs=cb)
 
     def one_epoch(self, train):

@@ -7,6 +7,7 @@ import torch
 import time
 import numpy as np
 from pathlib import Path
+import logging
 
 
 class TrackTimerCB(Callback):
@@ -121,7 +122,10 @@ class TrackTrainingCB(Callback):
                 self.recorder['valid_'+name].append( values[name] ) 
             
     
-    def after_batch_train(self): self.accumulate()  # save batch recorder                
+    def after_batch_train(self):
+        self.accumulate()  # save batch recorder
+        logging.info(f"Batch loss: {self.batch_recorder['batch_losses'][-1]}")
+
     def after_batch_valid(self): self.accumulate()
         
     def accumulate(self ):
@@ -129,7 +133,7 @@ class TrackTrainingCB(Callback):
         bs = len(xb)                                
         self.batch_recorder['n_samples'].append(bs)
         # get batch loss 
-        loss = self.loss.detach()*bs if self.mean_reduction_ else self.loss.detach()        
+        loss = self.loss.detach()*bs if self.mean_reduction_ else self.loss.detach()
         self.batch_recorder['batch_losses'].append(loss)
         
         if yb is None: self.batch_recorder['with_metrics'] = False
