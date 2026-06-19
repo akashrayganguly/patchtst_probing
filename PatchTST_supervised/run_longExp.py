@@ -92,6 +92,18 @@ if __name__ == '__main__':
     parser.add_argument('--devices', type=str, default='0,1,2,3', help='device ids of multile gpus')
     parser.add_argument('--test_flop', action='store_true', default=False, help='See utils/tools for usage')
 
+    # ----------------------------------------------------------------------- #
+    #  Gradient-flow / parameter-drift / capacity diagnostics
+    # ----------------------------------------------------------------------- #
+    parser.add_argument('--track_gradients', type=int, default=0,
+                        help='1: enable gradient-flow / drift / capacity tracking; 0: off')
+    parser.add_argument('--track_log_dir', type=str, default='./grad_logs',
+                        help='directory where per-metric diagnostic CSVs are written')
+    parser.add_argument('--track_every', type=int, default=0,
+                        help='log every N iterations; 0 = auto (~track_sample_frac of an epoch)')
+    parser.add_argument('--track_sample_frac', type=float, default=0.1,
+                        help='auto cadence: fraction of an epoch between samples (default 10%%)')
+
     args = parser.parse_args()
 
     # random seed
@@ -170,4 +182,3 @@ if __name__ == '__main__':
         print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
         exp.test(setting, test=1)
         torch.cuda.empty_cache()
-        
