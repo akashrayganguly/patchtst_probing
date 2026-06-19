@@ -3,6 +3,7 @@ from exp.exp_basic import Exp_Basic
 from models import Informer, Autoformer, Transformer, DLinear, Linear, NLinear, PatchTST
 from utils.tools import EarlyStopping, adjust_learning_rate, visual, test_params_flop
 from utils.metrics import metric
+from utils.grad_tracker import GradientFlowTracker   # <-- diagnostics
 
 import numpy as np
 import torch
@@ -114,6 +115,22 @@ class Exp_Main(Exp_Basic):
         model_optim = self._select_optimizer()
         criterion = self._select_criterion()
 
+        # ------------------------------------------------------------------ #
+        #  Gradient-flow / parameter-drift / capacity diagnostics
+        # ------------------------------------------------------------------ #
+        tracker = None
+        if getattr(self.args, 'track_gradients', 0):
+            log_dir = os.path.join(getattr(self.args, 'track_log_dir', './grad_logs'), setting)
+            tracker = GradientFlowTracker(
+                self.model,
+                log_dir=log_dir,
+                sample_frac=getattr(self.args, 'track_sample_frac', 0.1),
+                every=getattr(self.args, 'track_every', 0),
+                verbose=True,
+            )
+            print('[train] gradient tracking ENABLED -> %s (steps/epoch=%d)'
+                  % (log_dir, train_steps))
+
         if self.args.use_amp:
             scaler = torch.cuda.amp.GradScaler()
             
@@ -132,6 +149,12 @@ class Exp_Main(Exp_Basic):
             for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(train_loader):
                 iter_count += 1
                 model_optim.zero_grad()
+
+                # decide whether this step is a diagnostic sample; arm hooks
+                do_log = (tracker is not None) and tracker.should_log(epoch, i, train_steps)
+                if do_log:
+                    tracker.arm()
+
                 batch_x = batch_x.float().to(self.device)
 
                 batch_y = batch_y.float().to(self.device)
@@ -184,10 +207,22 @@ class Exp_Main(Exp_Basic):
 
                 if self.args.use_amp:
                     scaler.scale(loss).backward()
+                    if do_log:
+                        # unscale so weight.grad reflects true (unscaled) gradients
+                        scaler.unscale_(model_optim)
+                        tracker.log_step(epoch=epoch, it=i,
+                                         global_step=epoch * train_steps + i,
+                                         lr=model_optim.param_groups[0]['lr'])
+                        tracker.disarm()
                     scaler.step(model_optim)
                     scaler.update()
                 else:
                     loss.backward()
+                    if do_log:
+                        tracker.log_step(epoch=epoch, it=i,
+                                         global_step=epoch * train_steps + i,
+                                         lr=model_optim.param_groups[0]['lr'])
+                        tracker.disarm()
                     model_optim.step()
                     
                 if self.args.lradj == 'TST':
@@ -210,6 +245,9 @@ class Exp_Main(Exp_Basic):
                 adjust_learning_rate(model_optim, scheduler, epoch + 1, self.args)
             else:
                 print('Updating learning rate to {}'.format(scheduler.get_last_lr()[0]))
+
+        if tracker is not None:
+            tracker.close()
 
         best_model_path = path + '/' + 'checkpoint.pth'
         self.model.load_state_dict(torch.load(best_model_path))
